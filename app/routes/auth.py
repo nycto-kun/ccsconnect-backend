@@ -1,13 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import supabase
 from app.models import UserCreate, LoginRequest, LoginResponse
 import uuid
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+security = HTTPBearer()
 
 @router.post("/register")
 async def register(user: UserCreate):
     try:
+        # Create user in Supabase Auth
         auth_response = supabase.auth.sign_up({
             "email": user.email,
             "password": user.password
@@ -18,6 +21,7 @@ async def register(user: UserCreate):
     if not auth_response.user:
         raise HTTPException(status_code=400, detail="Registration failed")
 
+    # Insert into public.users table
     user_data = {
         "id": auth_response.user.id,
         "email": user.email,
@@ -27,6 +31,7 @@ async def register(user: UserCreate):
     }
     supabase.table("users").insert(user_data).execute()
 
+    # Create role-specific profile
     if user.role == "student":
         student_profile = {
             "user_id": auth_response.user.id,
@@ -58,6 +63,7 @@ async def login(credentials: LoginRequest):
     if not auth_response.user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Fetch user role from public.users table
     user = supabase.table("users").select("role").eq("id", auth_response.user.id).single().execute()
     role = user.data["role"] if user.data else "student"
 
@@ -66,3 +72,17 @@ async def login(credentials: LoginRequest):
         "user_id": auth_response.user.id,
         "role": role
     }
+
+@router.get("/me")
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        # Verify token with Supabase
+        user = supabase.auth.get_user(token)
+        # Fetch full user profile from public.users table
+        profile = supabase.table("users").select("*").eq("id", user.user.id).single().execute()
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="User not found in database")
+        return profile.data
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token or user not found")
