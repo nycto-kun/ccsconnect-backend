@@ -6,6 +6,7 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     role: str  # 'student', 'company', 'admin'
+    student_id: Optional[str] = None   # only for students
 
 class StudentProfileCreate(BaseModel):
     user_id: str
@@ -30,7 +31,7 @@ class JobCreate(BaseModel):
     location: Optional[str] = None
     salary_range: Optional[str] = None
     duration: Optional[str] = None
-    expires_at: Optional[str] = None
+    expires_at: Optional[str] = None  # ISO date string
 
 class LoginRequest(BaseModel):
     email: EmailStr

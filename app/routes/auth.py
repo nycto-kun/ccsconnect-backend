@@ -33,11 +33,34 @@ async def register(user: UserCreate):
 
     # Create role-specific profile
     if user.role == "student":
-        student_profile = {
-            "user_id": auth_response.user.id,
-            "student_id": f"TEMP-{uuid.uuid4().hex[:8]}",
-            "skills": []
-        }
+        student_id_provided = user.student_id
+        if student_id_provided:
+            # Look up in registrar_mock
+            registrar = supabase.table("registrar_mock").select("*").eq("student_id", student_id_provided).maybe_single().execute()
+            if registrar.data:
+                # Use registrar data to create full profile
+                student_profile = {
+                    "user_id": auth_response.user.id,
+                    "student_id": student_id_provided,
+                    "course": registrar.data.get("course"),
+                    "year_level": registrar.data.get("year_level"),
+                    "gpa": registrar.data.get("gpa"),
+                    "skills": []
+                }
+            else:
+                # Registrar record not found – create temporary profile
+                student_profile = {
+                    "user_id": auth_response.user.id,
+                    "student_id": f"TEMP-{uuid.uuid4().hex[:8]}",
+                    "skills": []
+                }
+        else:
+            # No student_id provided – fallback to temporary
+            student_profile = {
+                "user_id": auth_response.user.id,
+                "student_id": f"TEMP-{uuid.uuid4().hex[:8]}",
+                "skills": []
+            }
         supabase.table("student_profiles").insert(student_profile).execute()
 
     if user.role == "company":
