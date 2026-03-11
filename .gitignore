@@ -1,0 +1,44 @@
+﻿# Python virtual environment
+venv/
+env/
+ENV/
+.env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables (sensitive)
+.env
+*.env
+
+# Database / local files
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Project specific
+# (add any other folders or files you want to exclude)
