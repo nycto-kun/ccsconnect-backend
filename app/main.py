@@ -11,10 +11,10 @@ app = FastAPI(
 )
 
 # CORS configuration – allow your frontend domains
+# Replace the placeholder with your actual Vercel frontend URL
 origins = [
-    "http://localhost:3000",                    # React development server
-    "https://ccsconnect.vercel.app",             # Replace with your actual Vercel URL
-    # Add any other domains as needed
+    "http://localhost:3000",                     # for local development
+    "https://ccsconnect-frontend.vercel.app",    # <-- REPLACE WITH YOUR ACTUAL URL
 ]
 
 app.add_middleware(
