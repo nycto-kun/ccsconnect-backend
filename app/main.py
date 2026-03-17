@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.routes import registrar
+app.include_router(registrar.router)
 # Import routers
 from app.routes import auth, jobs, notices, announcements
 
