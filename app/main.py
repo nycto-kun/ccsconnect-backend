@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import registrar
-app.include_router(registrar.router)
-# Import routers
-from app.routes import auth, jobs, notices, announcements
+
+# Import routers (must come AFTER app is created? Actually import can be here,
+# but they are just modules. The important part is to include them after app exists.
+# However, having them at the top is fine, as long as you don't CALL app.include_router before app exists.
+# The error was calling app.include_router before the line 'app = FastAPI()'.
 
 app = FastAPI(
     title="CCSConnect API",
@@ -12,10 +13,9 @@ app = FastAPI(
 )
 
 # CORS configuration – allow your frontend domains
-# Replace the placeholder with your actual Vercel frontend URL
 origins = [
-    "http://localhost:3000",                     # for local development
-    "https://ccsconnect-frontend.vercel.app",    # <-- REPLACE WITH YOUR ACTUAL URL
+    "http://localhost:3000",
+    "https://ccsconnect-frontend.vercel.app",  # Replace with your actual Vercel URL
 ]
 
 app.add_middleware(
@@ -26,11 +26,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# --- Now it's safe to include routers ---
+from app.routes import auth, jobs, notices, announcements, registrar
+
 app.include_router(auth.router)                 # /auth/*
 app.include_router(jobs.router)                 # /jobs/*
 app.include_router(notices.router)               # /notices/*
 app.include_router(announcements.router)         # /announcements/*
+app.include_router(registrar.router)             # /api/registrar/*
 
 @app.get("/")
 async def root():
