@@ -7,6 +7,8 @@ class UserCreate(BaseModel):
     full_name: str
     role: str  # 'student', 'company', 'admin'
     student_id: Optional[str] = None   # only for students
+    company_name: Optional[str] = None # only for companies
+    industry: Optional[str] = None     # only for companies
 
 class StudentProfileCreate(BaseModel):
     user_id: str

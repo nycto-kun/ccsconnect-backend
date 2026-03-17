@@ -9,4 +9,3 @@ class Config:
     MAIL_FROM = os.getenv("MAIL_FROM")
     MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
     MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
-    # smtplib uses starttls; we don't need SSL_TLS flags

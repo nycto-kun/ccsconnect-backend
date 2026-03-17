@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from app.database import supabase
 
 router = APIRouter(prefix="/api/registrar", tags=["Registrar"])

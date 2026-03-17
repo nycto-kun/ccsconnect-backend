@@ -14,7 +14,7 @@ def generate_temp_password(length=10):
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-# ---------- NEW: Student registration using registrar data ----------
+# ---------- Student registration using registrar data ----------
 @router.post("/register-student")
 async def register_student(student_id: str, email: str):
     # 1. Check registrar_mock for matching student_id and email
@@ -68,8 +68,7 @@ async def register_student(student_id: str, email: str):
 
     return {"message": "Account created. Please check your email for the temporary password."}
 
-# ---------- EXISTING ENDPOINTS (unchanged) ----------
-
+# ---------- General registration (for companies, admins, or manual students) ----------
 @router.post("/register")
 async def register(user: UserCreate):
     try:
@@ -122,13 +121,15 @@ async def register(user: UserCreate):
     if user.role == "company":
         company_profile = {
             "user_id": auth_response.user.id,
-            "company_name": user.full_name,
+            "company_name": user.company_name or user.full_name,
+            "industry": user.industry,
             "verified": False
         }
         supabase.table("company_profiles").insert(company_profile).execute()
 
     return {"message": "User created successfully", "user_id": auth_response.user.id}
 
+# ---------- Login ----------
 @router.post("/login", response_model=LoginResponse)
 async def login(credentials: LoginRequest):
     try:
@@ -151,6 +152,7 @@ async def login(credentials: LoginRequest):
         "role": role
     }
 
+# ---------- Get current user ----------
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
