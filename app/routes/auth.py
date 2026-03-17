@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import supabase
 from app.models import UserCreate, LoginRequest, LoginResponse
-from app.utils.email import send_temp_password_email  # new email utility
+from app.utils.email import send_temp_password_email
 import uuid
 import secrets
 import string
@@ -10,12 +10,11 @@ import string
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
-# Helper function to generate a temporary password
 def generate_temp_password(length=10):
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-# ---------- NEW ENDPOINT: Register student with only student number and email ----------
+# ---------- NEW: Student registration using registrar data ----------
 @router.post("/register-student")
 async def register_student(student_id: str, email: str):
     # 1. Check registrar_mock for matching student_id and email
@@ -26,16 +25,15 @@ async def register_student(student_id: str, email: str):
     # 2. Generate a temporary password
     temp_password = generate_temp_password()
 
-    # 3. Create user in Supabase Auth
+    # 3. Create user using Admin API (bypasses confirmation email)
     try:
-        auth_response = supabase.auth.sign_up({
+        auth_response = supabase.auth.admin.create_user({
             "email": email,
             "password": temp_password,
-            "options": {
-                "data": {
-                    "full_name": record.data["full_name"],
-                    "role": "student"
-                }
+            "email_confirm": True,          # mark as confirmed so they can log in immediately
+            "user_metadata": {
+                "full_name": record.data["full_name"],
+                "role": "student"
             }
         })
     except Exception as e:
@@ -50,7 +48,7 @@ async def register_student(student_id: str, email: str):
         "email": email,
         "full_name": record.data["full_name"],
         "role": "student",
-        "verified": False
+        "verified": True
     }
     supabase.table("users").insert(user_data).execute()
 
@@ -70,12 +68,11 @@ async def register_student(student_id: str, email: str):
 
     return {"message": "Account created. Please check your email for the temporary password."}
 
-# ---------- EXISTING ENDPOINTS ----------
+# ---------- EXISTING ENDPOINTS (unchanged) ----------
 
 @router.post("/register")
 async def register(user: UserCreate):
     try:
-        # Create user in Supabase Auth
         auth_response = supabase.auth.sign_up({
             "email": user.email,
             "password": user.password
@@ -86,7 +83,6 @@ async def register(user: UserCreate):
     if not auth_response.user:
         raise HTTPException(status_code=400, detail="Registration failed")
 
-    # Insert into public.users table
     user_data = {
         "id": auth_response.user.id,
         "email": user.email,
@@ -96,14 +92,11 @@ async def register(user: UserCreate):
     }
     supabase.table("users").insert(user_data).execute()
 
-    # Create role-specific profile
     if user.role == "student":
         student_id_provided = user.student_id
         if student_id_provided:
-            # Look up in registrar_mock
             registrar = supabase.table("registrar_mock").select("*").eq("student_id", student_id_provided).maybe_single().execute()
             if registrar.data:
-                # Use registrar data to create full profile
                 student_profile = {
                     "user_id": auth_response.user.id,
                     "student_id": student_id_provided,
@@ -113,14 +106,12 @@ async def register(user: UserCreate):
                     "skills": []
                 }
             else:
-                # Registrar record not found – create temporary profile
                 student_profile = {
                     "user_id": auth_response.user.id,
                     "student_id": f"TEMP-{uuid.uuid4().hex[:8]}",
                     "skills": []
                 }
         else:
-            # No student_id provided – fallback to temporary
             student_profile = {
                 "user_id": auth_response.user.id,
                 "student_id": f"TEMP-{uuid.uuid4().hex[:8]}",
@@ -151,7 +142,6 @@ async def login(credentials: LoginRequest):
     if not auth_response.user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Fetch user role from public.users table
     user = supabase.table("users").select("role").eq("id", auth_response.user.id).single().execute()
     role = user.data["role"] if user.data else "student"
 
@@ -165,9 +155,7 @@ async def login(credentials: LoginRequest):
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     try:
-        # Verify token with Supabase
         user = supabase.auth.get_user(token)
-        # Fetch full user profile from public.users table
         profile = supabase.table("users").select("*").eq("id", user.user.id).single().execute()
         if not profile.data:
             raise HTTPException(status_code=404, detail="User not found in database")
