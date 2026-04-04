@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import supabase
-from app.models import UserCreate, LoginRequest, LoginResponse
+from app.models import UserCreate, LoginRequest, LoginResponse, ProfileUpdate
 from app.utils.email import send_temp_password_email
 import uuid
 import secrets
@@ -164,3 +164,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         return profile.data
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token or user not found")
+    
+    # ---------- Profile update ----------
+@router.put("/profile")
+async def update_profile(updates: ProfileUpdate, user=Depends(get_current_user)):
+    allowed_fields = ["full_name", "phone", "location", "bio", "github", "linkedin", "portfolio", "department", "year"]
+    filtered = {k: v for k, v in updates.dict(exclude_unset=True).items() if k in allowed_fields}
+    if not filtered:
+        raise HTTPException(400, "No valid fields to update")
+    supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    return {"message": "Profile updated"}
+
+# ---------- Admin dependency ----------
+async def require_admin(user=Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin access required")
+    return user
