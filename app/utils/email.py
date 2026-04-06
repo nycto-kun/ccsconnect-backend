@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 async def send_temp_password_email(email: str, temp_password: str):
     """
-    Send an email with the temporary password using SMTP.
+    Send an email with the temporary password after account verification.
     """
     msg = MIMEMultipart()
     msg['From'] = Config.MAIL_FROM
@@ -33,4 +33,33 @@ async def send_temp_password_email(email: str, temp_password: str):
         logger.info(f"Temporary password email sent to {email}")
     except Exception as e:
         logger.error(f"Failed to send email to {email}: {str(e)}")
+        raise Exception(f"Email sending failed: {str(e)}")
+
+async def send_verification_email(email: str, verification_link: str, full_name: str):
+    """
+    Send a verification email with a link to complete registration.
+    """
+    msg = MIMEMultipart()
+    msg['From'] = Config.MAIL_FROM
+    msg['To'] = email
+    msg['Subject'] = "Verify your CCSConnect student account"
+
+    body = f"""
+    <h3>Hello {full_name},</h3>
+    <p>Please click the link below to verify your email and complete your registration:</p>
+    <p><a href="{verification_link}">{verification_link}</a></p>
+    <p>This link will expire in 24 hours.</p>
+    <p>– CCSConnect Team</p>
+    """
+    msg.attach(MIMEText(body, 'html'))
+
+    try:
+        server = smtplib.SMTP(Config.MAIL_SERVER, Config.MAIL_PORT)
+        server.starttls()
+        server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Verification email sent to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {str(e)}")
         raise Exception(f"Email sending failed: {str(e)}")
