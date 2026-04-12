@@ -6,29 +6,11 @@ logger = logging.getLogger(__name__)
 
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
-async def send_verification_email(email: str, verification_link: str, full_name: str):
-    subject = "Verify your CCSConnect student account"
-    html_content = f"""
-    <h3>Hello {full_name},</h3>
-    <p>Please click the link below to verify your email and complete your registration:</p>
-    <p><a href="{verification_link}">{verification_link}</a></p>
-    <p>This link will expire in 24 hours.</p>
-    <p>– CCSConnect Team</p>
-    """
-    return _send_brevo_email(email, full_name, subject, html_content)
-
-async def send_temp_password_email(email: str, temp_password: str, full_name: str):
-    subject = "Your CCSConnect Account Credentials"
-    html_content = f"""
-    <h3>Welcome to CCSConnect, {full_name}!</h3>
-    <p>Your student account has been created. Use the temporary password below to log in:</p>
-    <p><strong>{temp_password}</strong></p>
-    <p>After logging in, you can change your password in your profile.</p>
-    <p>– CCSConnect Team</p>
-    """
-    return _send_brevo_email(email, full_name, subject, html_content)
-
 def _send_brevo_email(to_email: str, to_name: str, subject: str, html_content: str):
+    """
+    Internal function to send an email via Brevo API.
+    Raises an exception if the API call fails.
+    """
     api_key = Config.BREVO_API_KEY
     if not api_key:
         raise Exception("BREVO_API_KEY not set in environment variables")
@@ -46,9 +28,37 @@ def _send_brevo_email(to_email: str, to_name: str, subject: str, html_content: s
     }
     try:
         response = requests.post(BREVO_API_URL, json=data, headers=headers, timeout=10)
-        response.raise_for_status()
+        response.raise_for_status()  # raises HTTPError for 4xx/5xx
         logger.info(f"Email sent to {to_email}")
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to send email to {to_email}: {e}")
         raise Exception(f"Email sending failed: {e}")
+
+async def send_verification_email(email: str, verification_link: str, full_name: str):
+    """
+    Send a verification email with a link to complete registration.
+    """
+    subject = "Verify your CCSConnect student account"
+    html_content = f"""
+    <h3>Hello {full_name},</h3>
+    <p>Please click the link below to verify your email and complete your registration:</p>
+    <p><a href="{verification_link}">{verification_link}</a></p>
+    <p>This link will expire in 24 hours.</p>
+    <p>– CCSConnect Team</p>
+    """
+    return _send_brevo_email(email, full_name, subject, html_content)
+
+async def send_temp_password_email(email: str, temp_password: str, full_name: str):
+    """
+    Send the temporary password after the user verifies their email.
+    """
+    subject = "Your CCSConnect Account Credentials"
+    html_content = f"""
+    <h3>Welcome to CCSConnect, {full_name}!</h3>
+    <p>Your student account has been created. Use the temporary password below to log in:</p>
+    <p><strong>{temp_password}</strong></p>
+    <p>After logging in, you can change your password in your profile.</p>
+    <p>– CCSConnect Team</p>
+    """
+    return _send_brevo_email(email, full_name, subject, html_content)
