@@ -6,7 +6,7 @@ from app.utils.email import send_verification_email, send_temp_password_email
 import uuid
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -36,7 +36,7 @@ async def register_student(student_id: str, email: str):
         "year_level": record.data.get("year_level"),
         "gpa": record.data.get("gpa"),
         "token": token,
-        "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
         "used": False
     }
     supabase.table("pending_registrations").insert(pending_data).execute()
@@ -51,23 +51,25 @@ async def register_student(student_id: str, email: str):
 # ---------- Verify registration and create account ----------
 @router.post("/verify-registration")
 async def verify_registration(token: str):
-    # 1. Look up token
     pending = supabase.table("pending_registrations").select("*").eq("token", token).maybe_single().execute()
     if not pending.data:
         raise HTTPException(404, "Invalid token")
     if pending.data["used"]:
         raise HTTPException(400, "Token already used")
-    if datetime.fromisoformat(pending.data["expires_at"]) < datetime.utcnow():
+
+    # Compare timezone-aware datetimes
+    expires_at = datetime.fromisoformat(pending.data["expires_at"])
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Token expired")
 
-    # 2. Mark token as used
+    # Mark token as used
     supabase.table("pending_registrations").update({"used": True}).eq("token", token).execute()
 
-    # 3. Generate temporary password
+    # Generate temporary password
     temp_password = generate_temp_password()
     full_name = pending.data["full_name"]
 
-    # 4. Create user in Supabase Auth
+    # Create user in Supabase Auth
     try:
         auth_response = supabase.auth.admin.create_user({
             "email": pending.data["email"],
@@ -84,7 +86,7 @@ async def verify_registration(token: str):
     if not auth_response.user:
         raise HTTPException(400, detail="User creation failed")
 
-    # 5. Insert into users table
+    # Insert into users table
     user_data = {
         "id": auth_response.user.id,
         "email": pending.data["email"],
@@ -99,7 +101,7 @@ async def verify_registration(token: str):
     }
     supabase.table("users").insert(user_data).execute()
 
-    # 6. Send email with temporary password
+    # Send email with temporary password
     await send_temp_password_email(pending.data["email"], temp_password, full_name)
 
     return {"message": "Account created. Check your email for the temporary password."}
@@ -127,7 +129,6 @@ async def register(user: UserCreate):
     }
 
     if user.role == "company":
-        # Create company in companies table
         company_data = {
             "name": user.company_name or user.full_name,
             "company_code": f"COMP-{uuid.uuid4().hex[:8]}",

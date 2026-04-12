@@ -6,4 +6,4 @@ load_dotenv()
 class Config:
     MAIL_FROM = os.getenv("MAIL_FROM", "noreply@ccsconnect.edu")
     BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-    # Keep other variables if needed (e.g., for local SMTP fallback)
+    # Other config values (Supabase URL, etc.) are already in database.py
