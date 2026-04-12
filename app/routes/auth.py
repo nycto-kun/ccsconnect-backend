@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import supabase
 from app.models import UserCreate, LoginRequest, LoginResponse, ProfileUpdate
-from app.utils.email import send_temp_password_email, send_verification_email
+from app.utils.email import send_verification_email, send_temp_password_email
 import uuid
 import secrets
 import string
@@ -65,6 +65,7 @@ async def verify_registration(token: str):
 
     # 3. Generate temporary password
     temp_password = generate_temp_password()
+    full_name = pending.data["full_name"]
 
     # 4. Create user in Supabase Auth
     try:
@@ -73,7 +74,7 @@ async def verify_registration(token: str):
             "password": temp_password,
             "email_confirm": True,
             "user_metadata": {
-                "full_name": pending.data["full_name"],
+                "full_name": full_name,
                 "role": "student"
             }
         })
@@ -87,7 +88,7 @@ async def verify_registration(token: str):
     user_data = {
         "id": auth_response.user.id,
         "email": pending.data["email"],
-        "full_name": pending.data["full_name"],
+        "full_name": full_name,
         "role": "student",
         "verified": True,
         "student_id": pending.data["student_id"],
@@ -99,7 +100,7 @@ async def verify_registration(token: str):
     supabase.table("users").insert(user_data).execute()
 
     # 6. Send email with temporary password
-    await send_temp_password_email(pending.data["email"], temp_password)
+    await send_temp_password_email(pending.data["email"], temp_password, full_name)
 
     return {"message": "Account created. Check your email for the temporary password."}
 
