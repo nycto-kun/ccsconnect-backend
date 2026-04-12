@@ -27,7 +27,7 @@ async def register_student(student_id: str, email: str):
     # 2. Generate unique token
     token = secrets.token_urlsafe(32)
 
-    # 3. Store in pending_registrations
+    # 3. Store in pending_registrations (use timezone-aware datetime)
     pending_data = {
         "student_id": student_id,
         "email": email,
@@ -51,25 +51,26 @@ async def register_student(student_id: str, email: str):
 # ---------- Verify registration and create account ----------
 @router.post("/verify-registration")
 async def verify_registration(token: str):
+    # 1. Look up token
     pending = supabase.table("pending_registrations").select("*").eq("token", token).maybe_single().execute()
     if not pending.data:
         raise HTTPException(404, "Invalid token")
     if pending.data["used"]:
         raise HTTPException(400, "Token already used")
 
-    # Compare timezone-aware datetimes
+    # 2. Check expiration (timezone-aware comparison)
     expires_at = datetime.fromisoformat(pending.data["expires_at"])
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Token expired")
 
-    # Mark token as used
+    # 3. Mark token as used
     supabase.table("pending_registrations").update({"used": True}).eq("token", token).execute()
 
-    # Generate temporary password
+    # 4. Generate temporary password
     temp_password = generate_temp_password()
     full_name = pending.data["full_name"]
 
-    # Create user in Supabase Auth
+    # 5. Create user in Supabase Auth
     try:
         auth_response = supabase.auth.admin.create_user({
             "email": pending.data["email"],
@@ -86,7 +87,7 @@ async def verify_registration(token: str):
     if not auth_response.user:
         raise HTTPException(400, detail="User creation failed")
 
-    # Insert into users table
+    # 6. Insert into users table
     user_data = {
         "id": auth_response.user.id,
         "email": pending.data["email"],
@@ -101,7 +102,7 @@ async def verify_registration(token: str):
     }
     supabase.table("users").insert(user_data).execute()
 
-    # Send email with temporary password
+    # 7. Send email with temporary password
     await send_temp_password_email(pending.data["email"], temp_password, full_name)
 
     return {"message": "Account created. Check your email for the temporary password."}
@@ -129,6 +130,7 @@ async def register(user: UserCreate):
     }
 
     if user.role == "company":
+        # Create company in companies table
         company_data = {
             "name": user.company_name or user.full_name,
             "company_code": f"COMP-{uuid.uuid4().hex[:8]}",
