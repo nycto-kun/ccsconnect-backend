@@ -1,18 +1,13 @@
 import logging
-from brevo_python import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
+import requests
 from app.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Configure Brevo API client
-configuration = Configuration()
-configuration.api_key['api-key'] = Config.BREVO_API_KEY
-api_instance = TransactionalEmailsApi(ApiClient(configuration))
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 async def send_verification_email(email: str, verification_link: str, full_name: str):
     subject = "Verify your CCSConnect student account"
-    sender = {"name": "CCSConnect", "email": Config.MAIL_FROM}
-    to = [{"email": email, "name": full_name}]
     html_content = f"""
     <h3>Hello {full_name},</h3>
     <p>Please click the link below to verify your email and complete your registration:</p>
@@ -20,24 +15,10 @@ async def send_verification_email(email: str, verification_link: str, full_name:
     <p>This link will expire in 24 hours.</p>
     <p>– CCSConnect Team</p>
     """
-    send_smtp_email = SendSmtpEmail(
-        to=to,
-        sender=sender,
-        subject=subject,
-        html_content=html_content
-    )
-    try:
-        api_response = api_instance.send_transac_email(send_smtp_email)
-        logger.info(f"Verification email sent to {email}")
-        return api_response
-    except Exception as e:
-        logger.error(f"Exception when sending verification email to {email}: {e}")
-        raise Exception(f"Email sending failed: {e}")
+    return _send_brevo_email(email, full_name, subject, html_content)
 
 async def send_temp_password_email(email: str, temp_password: str, full_name: str):
     subject = "Your CCSConnect Account Credentials"
-    sender = {"name": "CCSConnect", "email": Config.MAIL_FROM}
-    to = [{"email": email, "name": full_name}]
     html_content = f"""
     <h3>Welcome to CCSConnect, {full_name}!</h3>
     <p>Your student account has been created. Use the temporary password below to log in:</p>
@@ -45,16 +26,29 @@ async def send_temp_password_email(email: str, temp_password: str, full_name: st
     <p>After logging in, you can change your password in your profile.</p>
     <p>– CCSConnect Team</p>
     """
-    send_smtp_email = SendSmtpEmail(
-        to=to,
-        sender=sender,
-        subject=subject,
-        html_content=html_content
-    )
+    return _send_brevo_email(email, full_name, subject, html_content)
+
+def _send_brevo_email(to_email: str, to_name: str, subject: str, html_content: str):
+    api_key = Config.BREVO_API_KEY
+    if not api_key:
+        raise Exception("BREVO_API_KEY not set in environment variables")
+
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+    data = {
+        "sender": {"name": "CCSConnect", "email": Config.MAIL_FROM},
+        "to": [{"email": to_email, "name": to_name}],
+        "subject": subject,
+        "htmlContent": html_content,
+    }
     try:
-        api_response = api_instance.send_transac_email(send_smtp_email)
-        logger.info(f"Temporary password email sent to {email}")
-        return api_response
-    except Exception as e:
-        logger.error(f"Exception when sending temp password email to {email}: {e}")
+        response = requests.post(BREVO_API_URL, json=data, headers=headers, timeout=10)
+        response.raise_for_status()
+        logger.info(f"Email sent to {to_email}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
         raise Exception(f"Email sending failed: {e}")
