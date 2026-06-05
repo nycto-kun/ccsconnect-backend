@@ -37,3 +37,12 @@ async def approve_company(company_id: str, user=Depends(require_admin)):
 async def reject_company(company_id: str, user=Depends(require_admin)):
     supabase.table("companies").delete().eq("id", company_id).execute()
     return {"message": "Company rejected"}
+
+@router.get("/users")
+async def get_all_users(role: str = None, user=Depends(require_admin)):
+    """Get all users (admin only) - for student management tab"""
+    query = supabase.table("users").select("*")
+    if role:
+        query = query.eq("role", role)
+    result = query.execute()
+    return result.data
