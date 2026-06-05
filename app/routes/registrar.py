@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.database import supabase
+from database import supabase
 
 router = APIRouter(prefix="/api/registrar", tags=["Registrar"])
 

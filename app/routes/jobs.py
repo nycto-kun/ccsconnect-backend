@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import supabase
-from app.ai_engine import vectorize_text
-from app.routes.auth import get_current_user, require_admin
+from database import supabase
+from ai_engine import vectorize_text
+from routes.auth import get_current_user, require_admin
 from typing import Optional
 import uuid
 from datetime import datetime

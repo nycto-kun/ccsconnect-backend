@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import supabase
-from app.ai_engine import vectorize_text, cosine_similarity
-from app.routes.auth import get_current_user
+from database import supabase
+from ai_engine import vectorize_text, cosine_similarity
+from routes.auth import get_current_user
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 

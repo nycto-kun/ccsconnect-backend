@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.database import supabase
-from app.models import UserCreate, LoginRequest, LoginResponse, ProfileUpdate
-from app.utils.email import send_verification_email, send_temp_password_email
+from database import supabase
+from models import UserCreate, LoginRequest, LoginResponse, ProfileUpdate
+from utils.email import send_verification_email, send_temp_password_email
 import uuid
 import secrets
 import string

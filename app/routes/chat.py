@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import supabase
-from app.models import ConversationCreate, ConversationResponse, MessageCreate, MessageResponse
-from app.routes.auth import get_current_user
+from database import supabase
+from models import ConversationCreate, ConversationResponse, MessageCreate, MessageResponse
+from routes.auth import get_current_user
 import uuid
 
 router = APIRouter(prefix="/chat", tags=["Chat"])

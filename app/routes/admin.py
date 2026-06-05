@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from app.database import supabase
-from app.routes.auth import require_admin
+from database import supabase
+from routes.auth import require_admin
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 

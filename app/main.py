@@ -6,73 +6,87 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Existing routers
-from app.routes import auth, jobs, announcements, registrar
-from app.routes import resources, offers, chat, ai, students
-from app.routes import applications, attendance, reports, admin
-from app.routes import bookmarks, assignments
-from app.routes import notices
+# Import all routers - NO 'app.' prefix because we're INSIDE the app folder
+from routes import auth
+from routes import jobs
+from routes import announcements
+from routes import registrar
+from routes import resources
+from routes import offers
+from routes import chat
+from routes import ai
+from routes import students
+from routes import applications
+from routes import attendance
+from routes import reports
+from routes import admin
+from routes import notices
+from routes import bookmarks
+from routes import assignments
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
-# Get allowed origins from environment variable (comma-separated)
-# Example: ALLOWED_ORIGINS=http://localhost:5173,https://ccsconnect-frontend.vercel.app,https://ccsconnect-frontend-r4uluj9wj-nycto-kuns-projects.vercel.app
+# CORS Configuration
 ALLOWED_ORIGINS_STR = os.getenv("ALLOWED_ORIGINS", "")
-ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",") if origin.strip()]
-
-# Fallback for development
-if not ALLOWED_ORIGINS and os.getenv("ENVIRONMENT") != "production":
+if ALLOWED_ORIGINS_STR:
+    ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",")]
+else:
     ALLOWED_ORIGINS = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8000",
+        "https://ccsconnect-frontend.vercel.app",
+        "https://*.vercel.app",
     ]
-
-# In production, if no origins are specified, raise an error
-if os.getenv("ENVIRONMENT") == "production" and not ALLOWED_ORIGINS:
-    raise ValueError("ALLOWED_ORIGINS environment variable must be set in production")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # Explicit list of allowed origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-    expose_headers=["Content-Length", "Content-Type"],
-    max_age=86400,  # 24 hours cache for preflight requests
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=86400,
 )
 
-# Include routers
-app.include_router(auth.router)
-app.include_router(jobs.router)
-app.include_router(notices.router)
-app.include_router(announcements.router)
-app.include_router(registrar.router)
-app.include_router(resources.router)
-app.include_router(offers.router)
-app.include_router(chat.router)
-app.include_router(ai.router)
-app.include_router(students.router)
-app.include_router(applications.router)
-app.include_router(attendance.router)
-app.include_router(reports.router)
-app.include_router(admin.router)
-app.include_router(bookmarks.router)
-app.include_router(assignments.router)
+# Include all routers
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
+app.include_router(applications.router, prefix="/applications", tags=["Applications"])
+app.include_router(attendance.router, prefix="/attendance", tags=["Attendance"])
+app.include_router(reports.router, prefix="/reports", tags=["Reports"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(notices.router, prefix="/notices", tags=["Notices"])
+app.include_router(bookmarks.router, prefix="/bookmarks", tags=["Bookmarks"])
+app.include_router(assignments.router, prefix="/assignments", tags=["Assignments"])
+app.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
+app.include_router(registrar.router, prefix="/registrar", tags=["Registrar"])
+app.include_router(resources.router, prefix="/resources", tags=["Resources"])
+app.include_router(offers.router, prefix="/offers", tags=["Offers"])
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(ai.router, prefix="/ai", tags=["AI"])
+app.include_router(students.router, prefix="/students", tags=["Students"])
 
 @app.get("/")
 async def root():
     return {
         "message": "CCSConnect API is running",
         "docs": "/docs",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "status": "healthy"
     }
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
-@app.options("/{rest_of_path:path}")
-async def preflight_options(rest_of_path: str):
-    """Explicit OPTIONS handler for CORS preflight"""
-    return {"message": "OK"}
+@app.get("/routes")
+async def list_routes():
+    """Debug endpoint to see all registered routes"""
+    routes = []
+    for route in app.routes:
+        routes.append({
+            "path": route.path,
+            "methods": list(route.methods) if hasattr(route, "methods") else [],
+        })
+    return {"total_routes": len(routes), "routes": routes}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import supabase
-from app.routes.auth import get_current_user, require_admin
+from database import supabase
+from routes.auth import get_current_user, require_admin
 import uuid
 from datetime import datetime
 

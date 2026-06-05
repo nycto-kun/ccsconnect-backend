@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import supabase
-from app.models import ResourceCreate, ResourceResponse
-from app.routes.auth import require_admin
+from database import supabase
+from models import ResourceCreate, ResourceResponse
+from routes.auth import require_admin
 from typing import List, Optional
 import uuid
 
