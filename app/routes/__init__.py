@@ -1,1 +1,1 @@
-# app/routes/__init__.py - This file MUST exist and can be empty
+from . import auth, jobs, companies, applications, attendance, reports, admin, notices, bookmarks, assignments, ai, chat, offers, resources, students, registrar, announcements

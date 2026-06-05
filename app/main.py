@@ -23,6 +23,7 @@ from app.routes import resources
 from app.routes import students
 from app.routes import registrar
 from app.routes import announcements
+from app.routes import companies
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
@@ -66,6 +67,7 @@ app.include_router(resources.router, prefix="/resources", tags=["Resources"])
 app.include_router(students.router, prefix="/students", tags=["Students"])
 app.include_router(registrar.router, prefix="/registrar", tags=["Registrar"])
 app.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
+app.include_router(companies.router, prefix="/companies", tags=["Companies"])
 
 @app.get("/")
 async def root():
