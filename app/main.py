@@ -15,15 +15,18 @@ app = FastAPI(title="CCSConnect API", version="1.0.0")
 origins = [
     "http://localhost:3000",
     "https://ccsconnect-frontend.vercel.app",
-    # add other frontend URLs as needed
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "https://*.vercel.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origins,           # NOT ["*"] when using credentials
+    allow_credentials=True,          # Required for cookies/auth headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],  # Include OPTIONS
+    allow_headers=["*"],             # Allow all headers
+    expose_headers=["*"],
 )
 
 # Include routers
