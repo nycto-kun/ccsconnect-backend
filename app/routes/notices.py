@@ -1,9 +1,43 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import supabase
+from app.routes.auth import get_current_user, require_admin
+import uuid
+from datetime import datetime
 
 router = APIRouter(prefix="/notices", tags=["Notices"])
 
 @router.get("/")
-async def get_notices():
-    # Return empty list for now – you can add mock data later
-    return []
+async def get_notices(type: str = None, pinned: bool = None):
+    query = supabase.table("notices").select("*")
+    if type:
+        query = query.eq("type", type)
+    if pinned is not None:
+        query = query.eq("pinned", pinned)
+    result = query.execute()
+    return result.data
+
+@router.post("/")
+async def create_notice(notice: dict, user=Depends(require_admin)):
+    data = {
+        "id": str(uuid.uuid4()),
+        "title": notice["title"],
+        "content": notice["content"],
+        "type": notice.get("type", "internship"),
+        "pinned": notice.get("pinned", False),
+        "start_date": notice.get("start_date"),
+        "end_date": notice.get("end_date"),
+        "created_by": user["id"],
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    supabase.table("notices").insert(data).execute()
+    return {"message": "Notice created"}
+
+@router.put("/{notice_id}")
+async def update_notice(notice_id: str, updates: dict, user=Depends(require_admin)):
+    supabase.table("notices").update(updates).eq("id", notice_id).execute()
+    return {"message": "Notice updated"}
+
+@router.delete("/{notice_id}")
+async def delete_notice(notice_id: str, user=Depends(require_admin)):
+    supabase.table("notices").delete().eq("id", notice_id).execute()
+    return {"message": "Notice deleted"}
