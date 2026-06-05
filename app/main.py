@@ -6,23 +6,23 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import all routers - NO 'app.' prefix because we're INSIDE the app folder
-from routes import auth
-from routes import jobs
-from routes import announcements
-from routes import registrar
-from routes import resources
-from routes import offers
-from routes import chat
-from routes import ai
-from routes import students
-from routes import applications
-from routes import attendance
-from routes import reports
-from routes import admin
-from routes import notices
-from routes import bookmarks
-from routes import assignments
+# Import all routers - using absolute imports from 'app'
+from app.routes import auth
+from app.routes import jobs
+from app.routes import applications
+from app.routes import attendance
+from app.routes import reports
+from app.routes import admin
+from app.routes import notices
+from app.routes import bookmarks
+from app.routes import assignments
+from app.routes import ai
+from app.routes import chat
+from app.routes import offers
+from app.routes import resources
+from app.routes import students
+from app.routes import registrar
+from app.routes import announcements
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
@@ -59,13 +59,13 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(notices.router, prefix="/notices", tags=["Notices"])
 app.include_router(bookmarks.router, prefix="/bookmarks", tags=["Bookmarks"])
 app.include_router(assignments.router, prefix="/assignments", tags=["Assignments"])
-app.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
-app.include_router(registrar.router, prefix="/registrar", tags=["Registrar"])
-app.include_router(resources.router, prefix="/resources", tags=["Resources"])
-app.include_router(offers.router, prefix="/offers", tags=["Offers"])
-app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(ai.router, prefix="/ai", tags=["AI"])
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(offers.router, prefix="/offers", tags=["Offers"])
+app.include_router(resources.router, prefix="/resources", tags=["Resources"])
 app.include_router(students.router, prefix="/students", tags=["Students"])
+app.include_router(registrar.router, prefix="/registrar", tags=["Registrar"])
+app.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
 
 @app.get("/")
 async def root():
@@ -82,7 +82,6 @@ async def health_check():
 
 @app.get("/routes")
 async def list_routes():
-    """Debug endpoint to see all registered routes"""
     routes = []
     for route in app.routes:
         routes.append({

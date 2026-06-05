@@ -1,15 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
-from database import supabase
-from routes.auth import get_current_user
+from fastapi import APIRouter, Depends, HTTPException
+from app.database import supabase
+from app.routes.auth import get_current_user
 
-router = APIRouter(prefix="/students", tags=["Students"])
+router = APIRouter()
 
 @router.get("/{student_id}/profile")
 async def get_student_profile(student_id: str, user=Depends(get_current_user)):
-    # Only allow the student themselves or admin to view
-    if user["id"] != student_id and user["role"] != "admin":
+    if user["id"] != student_id and user.get("role") != "admin":
         raise HTTPException(403, "Not authorized")
-    result = supabase.table("student_profiles").select("*").eq("user_id", student_id).single().execute()
-    if not result.data:
-        raise HTTPException(404, "Student profile not found")
+    
+    result = supabase.table("users").select("*").eq("id", student_id).single().execute()
     return result.data

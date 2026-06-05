@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from database import supabase
-from routes.auth import get_current_user
+from app.database import supabase
+from app.routes.auth import get_current_user
 import uuid
-from datetime import date
 
-router = APIRouter(prefix="/reports", tags=["Reports"])
+router = APIRouter()
 
 @router.post("/")
 async def submit_report(
@@ -15,8 +14,9 @@ async def submit_report(
     tasks: str = None,
     user=Depends(get_current_user)
 ):
-    if user["role"] != "student":
+    if user.get("role") != "student":
         raise HTTPException(403, "Only students can submit reports")
+    
     data = {
         "id": str(uuid.uuid4()),
         "student_id": user["id"],
@@ -32,18 +32,19 @@ async def submit_report(
 @router.get("/")
 async def get_reports(student_id: str = None, user=Depends(get_current_user)):
     query = supabase.table("reports").select("*")
+    
     if student_id:
-        if user["role"] != "student" or user["id"] != student_id:
-            # Admin or faculty can view any student's reports
-            if user["role"] not in ["admin", "faculty"]:
-                raise HTTPException(403, "Not authorized")
+        if user.get("role") != "admin" and user.get("id") != student_id:
+            raise HTTPException(403, "Not authorized")
         query = query.eq("student_id", student_id)
-    else:
-        # If no student_id, return own reports (for students) or all (for admin)
-        if user["role"] == "student":
-            query = query.eq("student_id", user["id"])
-        elif user["role"] == "faculty":
-            # For faculty, get reports of assigned students (simplified: all)
-            pass
-    result = query.execute()
+    elif user.get("role") == "student":
+        query = query.eq("student_id", user["id"])
+    
+    result = query.order("date", desc=True).execute()
+    
+    for report in result.data:
+        student = supabase.table("users").select("full_name").eq("id", report["student_id"]).execute()
+        if student.data:
+            report["student_name"] = student.data[0].get("full_name", "Unknown")
+    
     return result.data

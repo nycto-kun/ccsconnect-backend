@@ -1,19 +1,26 @@
 from fastapi import APIRouter, Depends
-from database import supabase
-from routes.auth import require_admin
+from app.database import supabase
+from app.routes.auth import require_admin
+from datetime import datetime
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter()
 
 @router.get("/stats")
 async def get_admin_stats(user=Depends(require_admin)):
-    total_students = supabase.table("users").select("id", count="exact").eq("role", "student").execute().count
-    active_jobs = supabase.table("jobs").select("id", count="exact").eq("status", "active").execute().count
-    placed_students = supabase.table("applications").select("id", count="exact").eq("status", "accepted").execute().count
-    placement_rate = round((placed_students / total_students) * 100, 1) if total_students else 0
+    students = supabase.table("users").select("id", count="exact").eq("role", "student").execute()
+    active_jobs = supabase.table("jobs").select("id", count="exact").eq("status", "active").execute()
+    placed = supabase.table("applications").select("id", count="exact").eq("status", "accepted").execute()
+    pending_companies = supabase.table("companies").select("id", count="exact").eq("verified", False).execute()
+    
+    placement_rate = round((placed.count / students.count) * 100, 1) if students.count > 0 else 0
+    
     return {
-        "totalStudents": total_students,
-        "activeJobs": active_jobs,
+        "totalStudents": students.count,
+        "activeJobs": active_jobs.count,
         "placementRate": placement_rate,
+        "pendingApprovals": pending_companies.count,
+        "totalPlacements": placed.count,
+        "lastUpdated": datetime.utcnow().isoformat()
     }
 
 @router.get("/pending-companies")
@@ -25,3 +32,8 @@ async def get_pending_companies(user=Depends(require_admin)):
 async def approve_company(company_id: str, user=Depends(require_admin)):
     supabase.table("companies").update({"verified": True}).eq("id", company_id).execute()
     return {"message": "Company approved"}
+
+@router.delete("/reject-company/{company_id}")
+async def reject_company(company_id: str, user=Depends(require_admin)):
+    supabase.table("companies").delete().eq("id", company_id).execute()
+    return {"message": "Company rejected"}
