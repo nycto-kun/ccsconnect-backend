@@ -46,3 +46,21 @@ async def get_all_users(role: str = None, user=Depends(require_admin)):
         query = query.eq("role", role)
     result = query.execute()
     return result.data
+# ============================================================
+# GET all users (admin only)
+# ============================================================
+@router.get("/users")
+async def get_all_users(role: str = None, user=Depends(require_admin)):
+    """
+    Get all users with optional role filter.
+    Used by admin dashboard for student management.
+    """
+    try:
+        query = supabase.table("users").select("*")
+        if role:
+            query = query.eq("role", role)
+        result = query.order("created_at", desc=True).execute()
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Error fetching users: {e}")
+        return []

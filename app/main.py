@@ -3,54 +3,40 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Import all routers - using absolute imports from 'app'
-from app.routes import auth
-from app.routes import jobs
-from app.routes import applications
-from app.routes import attendance
-from app.routes import reports
-from app.routes import admin
-from app.routes import notices
-from app.routes import bookmarks
-from app.routes import assignments
-from app.routes import ai
-from app.routes import chat
-from app.routes import offers
-from app.routes import resources
-from app.routes import students
-from app.routes import registrar
-from app.routes import announcements
-from app.routes import companies
+from app.routes import auth, jobs, applications, attendance, reports, admin
+from app.routes import notices, bookmarks, assignments, ai, chat, offers
+from app.routes import resources, students, registrar, announcements, companies
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
-# CORS Configuration
-ALLOWED_ORIGINS_STR = os.getenv("ALLOWED_ORIGINS", "")
-if ALLOWED_ORIGINS_STR:
-    ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",")]
-else:
-    ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8000",
-        "https://ccsconnect-frontend.vercel.app",
-        "https://*.vercel.app",
-    ]
+# CORS - Allow all origins temporarily for debugging
+# Then restrict after confirming it works
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "http://localhost:8000",
+    "https://ccsconnect-frontend.vercel.app",
+    "https://*.vercel.app",
+    "https://ccsconnect-backend.onrender.com",
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
-    max_age=86400,
 )
 
-# Include all routers
+# Add OPTIONS handler for all routes
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {"message": "OK"}
+
+# Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["Applications"])
@@ -71,23 +57,12 @@ app.include_router(companies.router, prefix="/companies", tags=["Companies"])
 
 @app.get("/")
 async def root():
-    return {
-        "message": "CCSConnect API is running",
-        "docs": "/docs",
-        "version": "1.0.0",
-        "status": "healthy"
-    }
+    return {"message": "CCSConnect API running", "docs": "/docs"}
 
 @app.get("/health")
-async def health_check():
+async def health():
     return {"status": "healthy"}
 
 @app.get("/routes")
 async def list_routes():
-    routes = []
-    for route in app.routes:
-        routes.append({
-            "path": route.path,
-            "methods": list(route.methods) if hasattr(route, "methods") else [],
-        })
-    return {"total_routes": len(routes), "routes": routes}
+    return {"total": len(app.routes), "routes": [{"path": r.path, "methods": list(r.methods)} for r in app.routes]}
