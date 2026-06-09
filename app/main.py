@@ -11,11 +11,10 @@ from app.routes import resources, students, registrar, announcements, companies
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
-# CORS - Allow all origins temporarily for debugging
-# Then restrict after confirming it works
+# CORS Configuration
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://localhost:5173", 
+    "http://localhost:5173",
     "http://localhost:8000",
     "https://ccsconnect-frontend.vercel.app",
     "https://*.vercel.app",
@@ -31,12 +30,12 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Add OPTIONS handler for all routes
+# OPTIONS handler for all routes
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
     return {"message": "OK"}
 
-# Include routers
+# Include routers - WITHOUT trailing slash to match frontend calls
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["Applications"])
@@ -65,4 +64,10 @@ async def health():
 
 @app.get("/routes")
 async def list_routes():
-    return {"total": len(app.routes), "routes": [{"path": r.path, "methods": list(r.methods)} for r in app.routes]}
+    routes = []
+    for route in app.routes:
+        routes.append({
+            "path": route.path,
+            "methods": list(route.methods) if hasattr(route, "methods") else [],
+        })
+    return {"total": len(routes), "routes": routes}

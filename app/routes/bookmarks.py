@@ -10,21 +10,19 @@ async def get_bookmarks(user=Depends(get_current_user)):
     if user.get("role") != "student":
         return []
     
-    result = supabase.table("bookmarks").select("*, jobs(*)").eq("student_id", user["id"]).execute()
-    
-    for bookmark in result.data:
-        if bookmark.get("jobs") and bookmark["jobs"].get("company_id"):
-            company = supabase.table("companies").select("name").eq("id", bookmark["jobs"]["company_id"]).execute()
-            if company.data:
-                bookmark["jobs"]["company_name"] = company.data[0]["name"]
-    
-    return result.data
+    try:
+        result = supabase.table("bookmarks").select("*, jobs(*)").eq("student_id", user["id"]).execute()
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Error fetching bookmarks: {e}")
+        return []
 
 @router.post("/{job_id}")
 async def add_bookmark(job_id: str, user=Depends(get_current_user)):
     if user.get("role") != "student":
         raise HTTPException(403, "Only students can bookmark")
     
+    # Check if already exists
     existing = supabase.table("bookmarks").select("*").eq("student_id", user["id"]).eq("job_id", job_id).execute()
     if existing.data:
         return {"message": "Already bookmarked"}
