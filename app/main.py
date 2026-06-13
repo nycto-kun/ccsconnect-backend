@@ -8,34 +8,39 @@ load_dotenv()
 from app.routes import auth, jobs, applications, attendance, reports, admin
 from app.routes import notices, bookmarks, assignments, ai, chat, offers
 from app.routes import resources, students, registrar, announcements, companies
+from app.routes import upload
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
-# CORS Configuration
+# CORS Configuration - MUST be first and correct
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8000",
     "https://ccsconnect-frontend.vercel.app",
     "https://*.vercel.app",
-    "https://ccsconnect-backend.onrender.com",
+    "https://ccsconnect.nport.link",
+    "https://*.nport.link",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
+    max_age=86400,
 )
 
-# OPTIONS handler for all routes
+# OPTIONS handler for all routes (CORS preflight)
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
     return {"message": "OK"}
 
-# Include routers - WITHOUT trailing slash to match frontend calls
+# NO REDIRECT MIDDLEWARE - DO NOT ADD ANY
+
+# Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["Applications"])
@@ -53,6 +58,7 @@ app.include_router(students.router, prefix="/students", tags=["Students"])
 app.include_router(registrar.router, prefix="/registrar", tags=["Registrar"])
 app.include_router(announcements.router, prefix="/announcements", tags=["Announcements"])
 app.include_router(companies.router, prefix="/companies", tags=["Companies"])
+app.include_router(upload.router, prefix="/upload", tags=["Upload"])
 
 @app.get("/")
 async def root():

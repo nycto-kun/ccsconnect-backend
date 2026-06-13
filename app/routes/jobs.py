@@ -17,16 +17,10 @@ async def get_jobs(
     company_id: Optional[str] = None,
     user=Depends(get_current_user)
 ):
-    """
-    Get all jobs with optional filters.
-    - status: filter by job status (active, closed, pending)
-    - company_id: filter by specific company
-    - For company users, automatically filters to their jobs
-    """
+    """Get all jobs with optional filters."""
     try:
         query = supabase.table("jobs").select("*")
         
-        # Apply filters
         if status:
             query = query.eq("status", status)
         
@@ -35,24 +29,19 @@ async def get_jobs(
         
         # If logged in as company, only show their jobs
         if user.get("role") == "company":
-            # Find company ID from email
             company = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
             if company.data:
                 query = query.eq("company_id", company.data[0]["id"])
             else:
-                # Company exists in users but not in companies table? Return empty
                 return []
         
-        # Execute query
         result = query.order("created_at", desc=True).execute()
         
         # Enrich with company name and application count
         for job in result.data:
-            # Get company name
             company = supabase.table("companies").select("name").eq("id", job["company_id"]).execute()
             job["company_name"] = company.data[0]["name"] if company.data else "Unknown"
             
-            # Get application count
             apps = supabase.table("applications").select("id", count="exact").eq("job_id", job["id"]).execute()
             job["applicants_count"] = apps.count
         
@@ -67,10 +56,7 @@ async def get_jobs(
 # ============================================================
 @router.get("/{job_id}")
 async def get_job(job_id: str, user=Depends(get_current_user)):
-    """
-    Get detailed information for a specific job.
-    Also increments the view count.
-    """
+    """Get detailed information for a specific job."""
     try:
         result = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
         if not result.data:
@@ -89,36 +75,44 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
         result.data["applicants_count"] = apps.count
         
         return result.data
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in get_job: {e}")
         raise HTTPException(500, str(e))
 
 
 # ============================================================
-# POST create new job
+# POST create new job - FIXED WITH BETTER ERROR HANDLING
 # ============================================================
 @router.post("/")
 async def create_job(job: dict, user=Depends(get_current_user)):
-    """
-    Create a new job posting.
-    - Company users: auto-assign to their company
-    - Admin users: can specify company_id
-    """
     try:
         if user.get("role") not in ["company", "admin"]:
             raise HTTPException(403, "Only companies and admins can post jobs")
         
-        # Determine company_id
+        if not job.get("title") or not job.get("description"):
+            raise HTTPException(400, "Title and description are required")
+        
         company_id = None
         
         if user.get("role") == "company":
-            # Find company by email
-            company_result = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
+            # First check if user already has a company_id in their profile
+            if user.get("company_id"):
+                company_id = user["company_id"]
+                # Verify it exists in companies table
+                company_check = supabase.table("companies").select("id").eq("id", company_id).execute()
+                if not company_check.data:
+                    company_id = None
             
-            if company_result.data:
-                company_id = company_result.data[0]["id"]
-            else:
-                # Create company record if it doesn't exist
+            # If no company_id, try to find by email
+            if not company_id:
+                company_result = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
+                if company_result.data:
+                    company_id = company_result.data[0]["id"]
+            
+            # If still no company, create one
+            if not company_id:
                 company_id = str(uuid.uuid4())
                 company_data = {
                     "id": company_id,
@@ -128,46 +122,40 @@ async def create_job(job: dict, user=Depends(get_current_user)):
                     "created_at": datetime.utcnow().isoformat()
                 }
                 supabase.table("companies").insert(company_data).execute()
+                
+                # Update user with company_id
+                supabase.table("users").update({"company_id": company_id}).eq("id", user["id"]).execute()
         else:
-            # Admin can specify company_id
             company_id = job.get("company_id")
             if not company_id:
-                raise HTTPException(400, "company_id is required for admin job posts")
+                raise HTTPException(400, "company_id required for admin posts")
+            
+            # Verify company exists
+            company_check = supabase.table("companies").select("id").eq("id", company_id).execute()
+            if not company_check.data:
+                raise HTTPException(400, f"Company with id {company_id} does not exist")
         
-        # Build job data
+        # Create the job
         data = {
             "id": str(uuid.uuid4()),
             "company_id": company_id,
             "title": job.get("title"),
             "description": job.get("description"),
             "requirements": job.get("requirements", []),
-            "location": job.get("location"),
-            "salary_range": job.get("salary_range"),
+            "location": job.get("location", ""),
+            "salary_range": job.get("salary_range", ""),
             "duration": job.get("duration", "3 months"),
             "expires_at": job.get("expires_at"),
-            "status": job.get("status", "active"),
+            "status": "active",
             "views": 0,
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        # Validate required fields
-        if not data["title"] or not data["description"]:
-            raise HTTPException(400, "Title and description are required")
-        
-        # Insert into database
         result = supabase.table("jobs").insert(data).execute()
         
         if not result.data:
             raise HTTPException(500, "Failed to create job")
-        
-        # Generate AI embedding in background
-        try:
-            text = f"{data['title']} {data['description']} {' '.join(data['requirements'])}"
-            embedding = vectorize_text(text)
-            supabase.table("jobs").update({"job_embedding": embedding}).eq("id", result.data[0]["id"]).execute()
-        except Exception as e:
-            print(f"⚠️ Embedding generation failed (non-critical): {e}")
         
         return {
             "message": "Job posted successfully",
@@ -177,38 +165,26 @@ async def create_job(job: dict, user=Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in create_job: {e}")
+        print(f"Error creating job: {e}")
         raise HTTPException(500, str(e))
-
 
 # ============================================================
 # PUT update existing job
 # ============================================================
 @router.put("/{job_id}")
 async def update_job(job_id: str, updates: dict, user=Depends(get_current_user)):
-    """
-    Update an existing job posting.
-    - Company users can only update their own jobs
-    - Admin users can update any job
-    """
+    """Update an existing job posting."""
     try:
-        # Get the job first
         job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
         if not job.data:
             raise HTTPException(404, "Job not found")
         
-        # Check permissions
         if user.get("role") == "company":
-            # Verify this job belongs to the company
             company = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
             if not company.data or job.data["company_id"] != company.data[0]["id"]:
                 raise HTTPException(403, "You can only update your own jobs")
         
-        # Allowed fields to update
-        allowed_fields = [
-            "title", "description", "requirements", "location", 
-            "salary_range", "duration", "expires_at", "status"
-        ]
+        allowed_fields = ["title", "description", "requirements", "location", "salary_range", "duration", "expires_at", "status"]
         filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
         
         if not filtered_updates:
@@ -216,18 +192,7 @@ async def update_job(job_id: str, updates: dict, user=Depends(get_current_user))
         
         filtered_updates["updated_at"] = datetime.utcnow().isoformat()
         
-        # Update database
-        result = supabase.table("jobs").update(filtered_updates).eq("id", job_id).execute()
-        
-        # Regenerate embedding if title/description/requirements changed
-        if any(k in filtered_updates for k in ["title", "description", "requirements"]):
-            try:
-                updated_job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
-                text = f"{updated_job.data['title']} {updated_job.data['description']} {' '.join(updated_job.data.get('requirements', []))}"
-                embedding = vectorize_text(text)
-                supabase.table("jobs").update({"job_embedding": embedding}).eq("id", job_id).execute()
-            except Exception as e:
-                print(f"⚠️ Embedding update failed: {e}")
+        supabase.table("jobs").update(filtered_updates).eq("id", job_id).execute()
         
         return {"message": "Job updated successfully"}
     except HTTPException:
@@ -242,30 +207,20 @@ async def update_job(job_id: str, updates: dict, user=Depends(get_current_user))
 # ============================================================
 @router.delete("/{job_id}")
 async def delete_job(job_id: str, user=Depends(get_current_user)):
-    """
-    Delete a job posting.
-    - Company users can only delete their own jobs
-    - Admin users can delete any job
-    """
+    """Delete a job posting."""
     try:
-        # Get the job first
         job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
         if not job.data:
             raise HTTPException(404, "Job not found")
         
-        # Check permissions
         if user.get("role") == "company":
             company = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
             if not company.data or job.data["company_id"] != company.data[0]["id"]:
                 raise HTTPException(403, "You can only delete your own jobs")
         
-        # Delete related applications first (cascade)
+        # Delete related applications and bookmarks
         supabase.table("applications").delete().eq("job_id", job_id).execute()
-        
-        # Delete bookmarks for this job
         supabase.table("bookmarks").delete().eq("job_id", job_id).execute()
-        
-        # Delete the job
         supabase.table("jobs").delete().eq("id", job_id).execute()
         
         return {"message": "Job deleted successfully"}
@@ -281,10 +236,7 @@ async def delete_job(job_id: str, user=Depends(get_current_user)):
 # ============================================================
 @router.get("/company/my")
 async def get_my_company_jobs(user=Depends(get_current_user)):
-    """
-    Get all jobs for the company of the logged-in user.
-    Convenience endpoint for company dashboard.
-    """
+    """Get all jobs for the logged-in company."""
     try:
         if user.get("role") != "company":
             raise HTTPException(403, "Only company users can access this endpoint")
@@ -295,7 +247,6 @@ async def get_my_company_jobs(user=Depends(get_current_user)):
         
         result = supabase.table("jobs").select("*").eq("company_id", company.data[0]["id"]).order("created_at", desc=True).execute()
         
-        # Add application count
         for job in result.data:
             apps = supabase.table("applications").select("id", count="exact").eq("job_id", job["id"]).execute()
             job["applicants_count"] = apps.count
@@ -311,37 +262,24 @@ async def get_my_company_jobs(user=Depends(get_current_user)):
 # ============================================================
 @router.get("/{job_id}/applications")
 async def get_job_applications(job_id: str, user=Depends(get_current_user)):
-    """
-    Get all applications for a specific job.
-    - Company users: only see applications for their jobs
-    - Admin users: see all
-    """
+    """Get all applications for a specific job."""
     try:
-        # Verify job exists
         job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
         if not job.data:
             raise HTTPException(404, "Job not found")
         
-        # Check permissions
         if user.get("role") == "company":
             company = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
             if not company.data or job.data["company_id"] != company.data[0]["id"]:
                 raise HTTPException(403, "You can only view applications for your own jobs")
         
-        # Get applications
         result = supabase.table("applications").select("*").eq("job_id", job_id).execute()
         
-        # Enrich with student details
         for app in result.data:
-            student = supabase.table("users").select("full_name, email, student_id, phone, department, year, skills").eq("id", app["student_id"]).execute()
+            student = supabase.table("users").select("full_name, email, student_id").eq("id", app["student_id"]).execute()
             if student.data:
                 app["student_name"] = student.data[0].get("full_name", "Unknown")
                 app["student_email"] = student.data[0].get("email")
-                app["student_id_number"] = student.data[0].get("student_id")
-                app["student_phone"] = student.data[0].get("phone")
-                app["student_department"] = student.data[0].get("department")
-                app["student_year"] = student.data[0].get("year")
-                app["student_skills"] = student.data[0].get("skills", [])
         
         return result.data
     except HTTPException:

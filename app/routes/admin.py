@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import supabase
 from app.routes.auth import require_admin
 from datetime import datetime
+from typing import Optional
 
 router = APIRouter()
 
@@ -23,10 +24,15 @@ async def get_admin_stats(user=Depends(require_admin)):
         "lastUpdated": datetime.utcnow().isoformat()
     }
 
+# Handle trailing slash
+@router.get("/stats/")
+async def get_admin_stats_trailing(user=Depends(require_admin)):
+    return await get_admin_stats(user)
+
 @router.get("/pending-companies")
 async def get_pending_companies(user=Depends(require_admin)):
     result = supabase.table("companies").select("*").eq("verified", False).execute()
-    return result.data
+    return result.data if result.data else []
 
 @router.post("/approve-company/{company_id}")
 async def approve_company(company_id: str, user=Depends(require_admin)):
@@ -39,22 +45,10 @@ async def reject_company(company_id: str, user=Depends(require_admin)):
     return {"message": "Company rejected"}
 
 @router.get("/users")
-async def get_all_users(role: str = None, user=Depends(require_admin)):
-    """Get all users (admin only) - for student management tab"""
-    query = supabase.table("users").select("*")
-    if role:
-        query = query.eq("role", role)
-    result = query.execute()
-    return result.data
-# ============================================================
-# GET all users (admin only)
-# ============================================================
-@router.get("/users")
-async def get_all_users(role: str = None, user=Depends(require_admin)):
-    """
-    Get all users with optional role filter.
-    Used by admin dashboard for student management.
-    """
+async def get_all_users(
+    role: Optional[str] = Query(None),
+    user=Depends(require_admin)
+):
     try:
         query = supabase.table("users").select("*")
         if role:
@@ -64,3 +58,10 @@ async def get_all_users(role: str = None, user=Depends(require_admin)):
     except Exception as e:
         print(f"Error fetching users: {e}")
         return []
+
+@router.get("/users/")
+async def get_all_users_trailing(
+    role: Optional[str] = Query(None),
+    user=Depends(require_admin)
+):
+    return await get_all_users(role, user)

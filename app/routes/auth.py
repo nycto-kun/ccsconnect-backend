@@ -157,13 +157,15 @@ async def login(credentials: LoginRequest):
     if not auth_response.user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user = supabase.table("users").select("role").eq("id", auth_response.user.id).single().execute()
+    user = supabase.table("users").select("role, company_id").eq("id", auth_response.user.id).single().execute()
     role = user.data["role"] if user.data else "student"
+    company_id = user.data.get("company_id") if user.data else None
 
     return {
         "access_token": auth_response.session.access_token,
         "user_id": auth_response.user.id,
-        "role": role
+        "role": role,
+        "company_id": company_id
     }
 
 # ---------- Get current user ----------
@@ -184,13 +186,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 async def update_profile(updates: dict, user=Depends(get_current_user)):
     allowed_fields = ["full_name", "phone", "location", "bio", "github", "linkedin", "portfolio", "department", "year", "skills"]
     filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
-
+    
     if not filtered:
         raise HTTPException(400, "No valid fields to update")
-
-    supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    
+    result = supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    
+    # Return updated user
     updated_user = supabase.table("users").select("*").eq("id", user["id"]).single().execute()
-    return updated_user.data
+    return updated_user.data if updated_user.data else {"message": "Profile updated"}
 
 # ---------- Forgot password ----------
 @router.post("/forgot-password")
@@ -205,15 +209,23 @@ async def forgot_password(email: str):
 
 # ---------- Change password ----------
 @router.post("/change-password")
-async def change_password(old_password: str, new_password: str, user=Depends(get_current_user)):
+async def change_password(
+    old_password: str, 
+    new_password: str, 
+    user=Depends(get_current_user)
+):
     try:
+        # Verify old password
         supabase.auth.sign_in_with_password({
             "email": user["email"],
             "password": old_password
         })
     except Exception:
         raise HTTPException(status_code=401, detail="Old password is incorrect")
-
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
     try:
         supabase.auth.admin.update_user_by_id(user["id"], {"password": new_password})
         return {"message": "Password changed successfully"}
@@ -225,3 +237,15 @@ async def require_admin(user=Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
     return user
+
+@router.put("/preferences")
+async def update_preferences(preferences: dict, user=Depends(get_current_user)):
+    """Update user notification preferences"""
+    supabase.table("users").update({"preferences": preferences}).eq("id", user["id"]).execute()
+    return {"message": "Preferences updated"}
+
+@router.put("/privacy")
+async def update_privacy(privacy: dict, user=Depends(get_current_user)):
+    """Update user privacy settings"""
+    supabase.table("users").update({"privacy_settings": privacy}).eq("id", user["id"]).execute()
+    return {"message": "Privacy settings updated"}

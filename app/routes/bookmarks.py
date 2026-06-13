@@ -17,12 +17,15 @@ async def get_bookmarks(user=Depends(get_current_user)):
         print(f"Error fetching bookmarks: {e}")
         return []
 
+@router.get("")
+async def get_bookmarks_no_slash(user=Depends(get_current_user)):
+    return await get_bookmarks(user)
+
 @router.post("/{job_id}")
 async def add_bookmark(job_id: str, user=Depends(get_current_user)):
     if user.get("role") != "student":
         raise HTTPException(403, "Only students can bookmark")
     
-    # Check if already exists
     existing = supabase.table("bookmarks").select("*").eq("student_id", user["id"]).eq("job_id", job_id).execute()
     if existing.data:
         return {"message": "Already bookmarked"}
