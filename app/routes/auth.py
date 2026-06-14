@@ -157,9 +157,15 @@ async def login(credentials: LoginRequest):
     if not auth_response.user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user = supabase.table("users").select("role, company_id").eq("id", auth_response.user.id).single().execute()
-    role = user.data["role"] if user.data else "student"
-    company_id = user.data.get("company_id") if user.data else None
+    # Use try/except to handle RLS issues gracefully
+    try:
+        user = supabase.table("users").select("role, company_id").eq("id", auth_response.user.id).single().execute()
+        role = user.data["role"] if user.data else "student"
+        company_id = user.data.get("company_id") if user.data else None
+    except Exception as e:
+        print(f"Error fetching user role: {e}")
+        role = "student"
+        company_id = None
 
     return {
         "access_token": auth_response.session.access_token,
@@ -249,3 +255,28 @@ async def update_privacy(privacy: dict, user=Depends(get_current_user)):
     """Update user privacy settings"""
     supabase.table("users").update({"privacy_settings": privacy}).eq("id", user["id"]).execute()
     return {"message": "Privacy settings updated"}
+
+@router.put("/profile-with-embedding")
+async def update_profile_with_embedding(updates: dict, user=Depends(get_current_user)):
+    """Update profile and regenerate AI embedding"""
+    allowed_fields = ["full_name", "phone", "location", "bio", "github", "linkedin", "portfolio", "department", "year", "skills"]
+    filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    
+    if not filtered:
+        raise HTTPException(400, "No valid fields to update")
+    
+    supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    
+    # Regenerate embedding if skills were updated
+    if "skills" in filtered and user.get("role") == "student":
+        try:
+            from app.ai_engine import vectorize_text
+            skills = filtered["skills"]
+            text = " ".join(skills)
+            embedding = vectorize_text(text)
+            supabase.table("users").update({"skills_embedding": embedding}).eq("id", user["id"]).execute()
+        except Exception as e:
+            print(f"Embedding update failed: {e}")
+    
+    updated_user = supabase.table("users").select("*").eq("id", user["id"]).single().execute()
+    return updated_user.data if updated_user.data else {"message": "Profile updated"}

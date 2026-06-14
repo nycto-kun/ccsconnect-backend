@@ -2,13 +2,17 @@ import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Load .env from parent directory
 load_dotenv()
 
 url: str = os.getenv("SUPABASE_URL")
-key: str = os.getenv("SUPABASE_SERVICE_KEY")
+service_key: str = os.getenv("SUPABASE_SERVICE_KEY")
+anon_key: str = os.getenv("SUPABASE_ANON_KEY")
 
-if not url or not key:
-    raise ValueError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in environment")
+if not url or not service_key:
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
 
-supabase: Client = create_client(url, key)
+# For operations that need to bypass RLS (admin functions)
+supabase_admin: Client = create_client(url, service_key)
+
+# For regular operations (respects RLS)
+supabase: Client = create_client(url, anon_key) if anon_key else supabase_admin

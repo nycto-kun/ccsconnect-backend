@@ -24,7 +24,6 @@ async def get_admin_stats(user=Depends(require_admin)):
         "lastUpdated": datetime.utcnow().isoformat()
     }
 
-# Handle trailing slash
 @router.get("/stats/")
 async def get_admin_stats_trailing(user=Depends(require_admin)):
     return await get_admin_stats(user)
@@ -33,6 +32,10 @@ async def get_admin_stats_trailing(user=Depends(require_admin)):
 async def get_pending_companies(user=Depends(require_admin)):
     result = supabase.table("companies").select("*").eq("verified", False).execute()
     return result.data if result.data else []
+
+@router.get("/pending-companies/")
+async def get_pending_companies_trailing(user=Depends(require_admin)):
+    return await get_pending_companies(user)
 
 @router.post("/approve-company/{company_id}")
 async def approve_company(company_id: str, user=Depends(require_admin)):

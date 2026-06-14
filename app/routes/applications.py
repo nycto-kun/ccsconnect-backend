@@ -12,33 +12,44 @@ router = APIRouter()
 # ============================================================
 @router.get("/")
 async def get_applications(
-    student_id: Optional[str] = Query(None),
-    job_id: Optional[str] = Query(None),
-    company_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    student_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    company_id: Optional[str] = None,
+    status: Optional[str] = None,
     user=Depends(get_current_user)
 ):
-    """
-    Get applications with various filters.
-    - student_id: get applications by student
-    - job_id: get applications for a specific job
-    - company_id: get all applications for a company's jobs
-    - status: filter by application status
-    """
     try:
         query = supabase.table("applications").select("*")
         
         # Apply filters
         if student_id:
             query = query.eq("student_id", student_id)
-        
         if job_id:
             query = query.eq("job_id", job_id)
-        
         if status:
             query = query.eq("status", status)
         
-        # Company filter - get all jobs for the company first
+        # If student, only their own
+        if user.get("role") == "student" and not student_id:
+            query = query.eq("student_id", user["id"])
+        
+        # If company, filter by their jobs
+        if user.get("role") == "company":
+            # Get company_id from user
+            user_data = supabase.table("users").select("company_id").eq("id", user["id"]).execute()
+            if user_data.data and user_data.data[0].get("company_id"):
+                comp_id = user_data.data[0]["company_id"]
+                # Get all job ids for this company
+                jobs = supabase.table("jobs").select("id").eq("company_id", comp_id).execute()
+                job_ids = [j["id"] for j in jobs.data]
+                if job_ids:
+                    query = query.in_("job_id", job_ids)
+                else:
+                    return []
+            else:
+                return []
+        
+        # If company_id param provided (admin use)
         if company_id:
             jobs = supabase.table("jobs").select("id").eq("company_id", company_id).execute()
             job_ids = [j["id"] for j in jobs.data]
@@ -47,52 +58,22 @@ async def get_applications(
             else:
                 return []
         
-        # If company user, filter to their jobs only
-        if user.get("role") == "company":
-            company = supabase.table("companies").select("id").eq("contact_email", user["email"]).execute()
-            if company.data:
-                jobs = supabase.table("jobs").select("id").eq("company_id", company.data[0]["id"]).execute()
-                job_ids = [j["id"] for j in jobs.data]
-                if job_ids:
-                    query = query.in_("job_id", job_ids)
-                else:
-                    return []
-        
-        # If student user, only show their own applications
-        if user.get("role") == "student" and not student_id:
-            query = query.eq("student_id", user["id"])
-        
-        # Execute query
         result = query.order("applied_at", desc=True).execute()
         applications = result.data if result.data else []
         
-        # Enrich with job details
+        # Enrich with job and student details
         for app in applications:
-            # Get job details
             job = supabase.table("jobs").select("*").eq("id", app["job_id"]).execute()
             if job.data:
-                app["job_title"] = job.data[0].get("title", "Unknown Position")
-                app["job_description"] = job.data[0].get("description")
-                app["job_location"] = job.data[0].get("location")
-                app["job_salary"] = job.data[0].get("salary_range")
-                app["job_duration"] = job.data[0].get("duration")
-                
-                # Get company name
+                app["job_title"] = job.data[0].get("title", "Unknown")
                 company = supabase.table("companies").select("name").eq("id", job.data[0]["company_id"]).execute()
-                app["company_name"] = company.data[0]["name"] if company.data else "Unknown Company"
-                app["company_id"] = job.data[0]["company_id"]
+                app["company_name"] = company.data[0]["name"] if company.data else "Unknown"
             
-            # Get student details
-            student = supabase.table("users").select("full_name, email, student_id, phone, department, year, skills, resume_url").eq("id", app["student_id"]).execute()
+            student = supabase.table("users").select("full_name, email, student_id").eq("id", app["student_id"]).execute()
             if student.data:
-                app["student_name"] = student.data[0].get("full_name", "Unknown Student")
+                app["student_name"] = student.data[0].get("full_name", "Unknown")
                 app["student_email"] = student.data[0].get("email")
-                app["student_id_number"] = student.data[0].get("student_id")
-                app["student_phone"] = student.data[0].get("phone")
-                app["student_department"] = student.data[0].get("department")
-                app["student_year"] = student.data[0].get("year")
-                app["student_skills"] = student.data[0].get("skills", [])
-                app["resume_url"] = student.data[0].get("resume_url")
+                app["roll_number"] = student.data[0].get("student_id")
         
         return applications
     except Exception as e:
@@ -184,29 +165,20 @@ async def get_application_no_slash(application_id: str, user=Depends(get_current
 # ============================================================
 @router.post("/")
 async def apply_to_job(job_id: str, user=Depends(get_current_user)):
-    """
-    Submit an application for a job.
-    Only students can apply.
-    """
     try:
-        # Check role
         if user.get("role") != "student":
-            raise HTTPException(403, "Only students can apply for jobs")
+            raise HTTPException(403, "Only students can apply")
         
-        # Check if job exists and is active
-        job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
+        # Check if job exists
+        job = supabase.table("jobs").select("*").eq("id", job_id).execute()
         if not job.data:
             raise HTTPException(404, "Job not found")
-        
-        if job.data.get("status") != "active":
-            raise HTTPException(400, "This job is no longer accepting applications")
         
         # Check if already applied
         existing = supabase.table("applications").select("*").eq("student_id", user["id"]).eq("job_id", job_id).execute()
         if existing.data:
-            raise HTTPException(400, "You have already applied to this job")
+            raise HTTPException(400, "Already applied")
         
-        # Create application
         data = {
             "id": str(uuid.uuid4()),
             "student_id": user["id"],
@@ -217,19 +189,9 @@ async def apply_to_job(job_id: str, user=Depends(get_current_user)):
         }
         
         result = supabase.table("applications").insert(data).execute()
-        
-        if not result.data:
-            raise HTTPException(500, "Failed to submit application")
-        
-        return {
-            "message": "Application submitted successfully",
-            "application_id": result.data[0]["id"],
-            "status": "pending"
-        }
-    except HTTPException:
-        raise
+        return {"message": "Application submitted", "application_id": result.data[0]["id"]}
     except Exception as e:
-        print(f"Error in apply_to_job: {e}")
+        print(f"Error applying to job: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -445,3 +407,110 @@ async def get_application_stats(job_id: str, user=Depends(get_current_user)):
     except Exception as e:
         print(f"Error in get_application_stats: {e}")
         raise HTTPException(500, str(e))
+    
+    # ============================================================
+# PATCH update application status
+# ============================================================
+@router.patch("/{application_id}")
+async def update_application_status(
+    application_id: str,
+    status: str,
+    notes: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    """
+    Update the status of an application.
+    - Company users can update applications for their jobs
+    - Admin users can update any application
+    """
+    # Allowed statuses
+    allowed_statuses = ["pending", "reviewed", "shortlisted", "interview", "accepted", "rejected", "withdrawn"]
+    if status not in allowed_statuses:
+        raise HTTPException(400, f"Invalid status. Allowed: {', '.join(allowed_statuses)}")
+    
+    try:
+        # Get the application with job details
+        app = supabase.table("applications").select("*, jobs(company_id, title)").eq("id", application_id).execute()
+        if not app.data:
+            raise HTTPException(404, "Application not found")
+        
+        app_data = app.data[0]
+        
+        # Check permissions
+        if user.get("role") == "company":
+            # Get user's company_id
+            user_data = supabase.table("users").select("company_id").eq("id", user["id"]).execute()
+            if not user_data.data or not user_data.data[0].get("company_id"):
+                raise HTTPException(403, "No company associated with your account")
+            
+            company_id = user_data.data[0]["company_id"]
+            
+            # Verify this job belongs to the company
+            if app_data["jobs"]["company_id"] != company_id:
+                raise HTTPException(403, "You can only update applications for your own jobs")
+                
+        elif user.get("role") == "student":
+            raise HTTPException(403, "Students cannot update application status")
+        # Admin can update any
+        
+        # Prepare update data
+        update_data = {
+            "status": status,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        if notes:
+            update_data["notes"] = notes
+        
+        # Update database
+        result = supabase.table("applications").update(update_data).eq("id", application_id).execute()
+        
+        return {
+            "message": f"Application status updated to {status}",
+            "application_id": application_id,
+            "status": status
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating application status: {e}")
+        raise HTTPException(500, str(e))
+
+# Also handle trailing slash version
+@router.patch("/{application_id}/")
+async def update_application_status_trailing(
+    application_id: str,
+    status: str,
+    notes: Optional[str] = None,
+    user=Depends(get_current_user)
+):
+    return await update_application_status(application_id, status, notes, user)
+
+@router.get("/company/interns")
+async def get_company_interns(user=Depends(get_current_user)):
+    """Get all interns (students) assigned to the logged-in company"""
+    if user.get("role") != "company":
+        raise HTTPException(403, "Only company users can access this endpoint")
+    
+    try:
+        # Get company_id from user profile
+        user_data = supabase.table("users").select("company_id").eq("id", user["id"]).execute()
+        if not user_data.data or not user_data.data[0].get("company_id"):
+            return []
+        
+        company_id = user_data.data[0]["company_id"]
+        
+        # Get all students assigned to this company
+        result = supabase.table("users").select("*").eq("company_id", company_id).eq("role", "student").execute()
+        
+        # Enrich with assignment details
+        for student in result.data:
+            assignment = supabase.table("assignments").select("*").eq("student_id", student["id"]).eq("company_id", company_id).execute()
+            if assignment.data:
+                student["assignment"] = assignment.data[0]
+        
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Error fetching company interns: {e}")
+        return []
