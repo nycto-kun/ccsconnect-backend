@@ -83,10 +83,11 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
 
 
 # ============================================================
-# POST create new job - FIXED WITH BETTER ERROR HANDLING
+# POST create new job - WITH AUTO-GENERATED EMBEDDING
 # ============================================================
 @router.post("/")
 async def create_job(job: dict, user=Depends(get_current_user)):
+    """Create a new job posting with auto-generated AI embedding."""
     try:
         if user.get("role") not in ["company", "admin"]:
             raise HTTPException(403, "Only companies and admins can post jobs")
@@ -157,10 +158,26 @@ async def create_job(job: dict, user=Depends(get_current_user)):
         if not result.data:
             raise HTTPException(500, "Failed to create job")
         
+        # 🔥🔥🔥 AUTO-GENERATE EMBEDDING FOR THE JOB 🔥🔥🔥
+        try:
+            # Combine title, description, and requirements for embedding
+            text = f"{data['title']} {data['description']} {' '.join(data['requirements'])}"
+            print(f"Generating embedding for job: {data['title']}")
+            print(f"Text length: {len(text)}")
+            
+            embedding = vectorize_text(text)
+            
+            # Update the job with the embedding
+            supabase.table("jobs").update({"job_embedding": embedding}).eq("id", result.data[0]["id"]).execute()
+            print(f"✅ Auto-generated embedding for job: {data['title']}")
+        except Exception as e:
+            print(f"⚠️ Embedding generation failed (non-critical): {e}")
+        
         return {
             "message": "Job posted successfully",
             "job_id": result.data[0]["id"],
-            "job": result.data[0]
+            "job": result.data[0],
+            "embedding_generated": True
         }
     except HTTPException:
         raise
@@ -168,12 +185,13 @@ async def create_job(job: dict, user=Depends(get_current_user)):
         print(f"Error creating job: {e}")
         raise HTTPException(500, str(e))
 
+
 # ============================================================
-# PUT update existing job
+# PUT update existing job - WITH EMBEDDING REGENERATION
 # ============================================================
 @router.put("/{job_id}")
 async def update_job(job_id: str, updates: dict, user=Depends(get_current_user)):
-    """Update an existing job posting."""
+    """Update an existing job posting and regenerate embedding."""
     try:
         job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
         if not job.data:
@@ -193,6 +211,17 @@ async def update_job(job_id: str, updates: dict, user=Depends(get_current_user))
         filtered_updates["updated_at"] = datetime.utcnow().isoformat()
         
         supabase.table("jobs").update(filtered_updates).eq("id", job_id).execute()
+        
+        # 🔥 REGENERATE EMBEDDING AFTER UPDATE 🔥
+        try:
+            updated_job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
+            if updated_job.data:
+                text = f"{updated_job.data['title']} {updated_job.data['description']} {' '.join(updated_job.data.get('requirements', []))}"
+                embedding = vectorize_text(text)
+                supabase.table("jobs").update({"job_embedding": embedding}).eq("id", job_id).execute()
+                print(f"✅ Regenerated embedding for job: {updated_job.data['title']}")
+        except Exception as e:
+            print(f"⚠️ Embedding regeneration failed: {e}")
         
         return {"message": "Job updated successfully"}
     except HTTPException:

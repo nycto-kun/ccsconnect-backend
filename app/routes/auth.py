@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.database import supabase
 from app.models import UserCreate, LoginRequest, LoginResponse, ProfileUpdate
@@ -8,6 +8,7 @@ import secrets
 import string
 from datetime import datetime, timedelta, timezone
 import os
+from typing import List
 
 router = APIRouter()
 security = HTTPBearer()
@@ -16,7 +17,10 @@ def generate_temp_password(length=10):
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-# ---------- Student registration ----------
+
+# ============================================================
+# STUDENT REGISTRATION (2-step with email verification)
+# ============================================================
 @router.post("/register-student")
 async def register_student(student_id: str, email: str):
     # Check registrar_mock
@@ -53,7 +57,10 @@ async def register_student(student_id: str, email: str):
 
     return {"message": "Verification link sent to your email"}
 
-# ---------- Verify registration ----------
+
+# ============================================================
+# VERIFY REGISTRATION
+# ============================================================
 @router.post("/verify-registration")
 async def verify_registration(token: str):
     pending = supabase.table("pending_registrations").select("*").eq("token", token).maybe_single().execute()
@@ -105,7 +112,10 @@ async def verify_registration(token: str):
 
     return {"message": "Account created. Check your email for the temporary password."}
 
-# ---------- Company registration ----------
+
+# ============================================================
+# COMPANY / ADMIN REGISTRATION
+# ============================================================
 @router.post("/register")
 async def register(user: UserCreate):
     try:
@@ -128,22 +138,28 @@ async def register(user: UserCreate):
     }
 
     if user.role == "company":
+        company_id = str(uuid.uuid4())
         company_data = {
-            "id": str(uuid.uuid4()),
+            "id": company_id,
             "name": user.company_name or user.full_name,
             "company_code": f"COMP-{uuid.uuid4().hex[:8]}",
             "verified": False,
             "contact_email": user.email,
             "industry": user.industry,
+            "created_at": datetime.utcnow().isoformat()
         }
         company_result = supabase.table("companies").insert(company_data).execute()
         if company_result.data:
-            user_data["company_id"] = company_result.data[0]["id"]
+            user_data["company_id"] = company_id
+            user_data["company_name"] = user.company_name
 
     supabase.table("users").insert(user_data).execute()
     return {"message": "User created successfully. Please check your email for verification.", "user_id": auth_response.user.id}
 
-# ---------- Login ----------
+
+# ============================================================
+# LOGIN
+# ============================================================
 @router.post("/login", response_model=LoginResponse)
 async def login(credentials: LoginRequest):
     try:
@@ -157,7 +173,6 @@ async def login(credentials: LoginRequest):
     if not auth_response.user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Use try/except to handle RLS issues gracefully
     try:
         user = supabase.table("users").select("role, company_id").eq("id", auth_response.user.id).single().execute()
         role = user.data["role"] if user.data else "student"
@@ -174,7 +189,10 @@ async def login(credentials: LoginRequest):
         "company_id": company_id
     }
 
-# ---------- Get current user ----------
+
+# ============================================================
+# GET CURRENT USER
+# ============================================================
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
@@ -187,7 +205,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ---------- Profile update ----------
+
+# ============================================================
+# UPDATE PROFILE (WITH AUTO EMBEDDING)
+# ============================================================
 @router.put("/profile")
 async def update_profile(updates: dict, user=Depends(get_current_user)):
     allowed_fields = ["full_name", "phone", "location", "bio", "github", "linkedin", "portfolio", "department", "year", "skills"]
@@ -196,13 +217,56 @@ async def update_profile(updates: dict, user=Depends(get_current_user)):
     if not filtered:
         raise HTTPException(400, "No valid fields to update")
     
-    result = supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    # Update profile
+    supabase.table("users").update(filtered).eq("id", user["id"]).execute()
+    
+    # 🔥 AUTO-GENERATE EMBEDDING WHEN SKILLS ARE UPDATED 🔥
+    if "skills" in filtered and user.get("role") == "student":
+        try:
+            from app.ai_engine import vectorize_text
+            skills = filtered["skills"]
+            if skills and len(skills) > 0:
+                text = " ".join(skills)
+                print(f"Generating embedding for student {user['id']} with skills: {skills}")
+                embedding = vectorize_text(text)
+                supabase.table("users").update({"skills_embedding": embedding}).eq("id", user["id"]).execute()
+                print(f"✅ Auto-generated embedding for student: {user['id']}")
+        except Exception as e:
+            print(f"⚠️ Student embedding generation failed: {e}")
     
     # Return updated user
     updated_user = supabase.table("users").select("*").eq("id", user["id"]).single().execute()
     return updated_user.data if updated_user.data else {"message": "Profile updated"}
 
-# ---------- Forgot password ----------
+
+# ============================================================
+# UPDATE SKILLS (Dedicated endpoint with embedding)
+# ============================================================
+@router.put("/skills")
+async def update_skills(skills: List[str], user=Depends(get_current_user)):
+    """Update student skills and generate embedding"""
+    if user.get("role") != "student":
+        raise HTTPException(403, "Only students can update skills")
+    
+    # Update skills
+    supabase.table("users").update({"skills": skills}).eq("id", user["id"]).execute()
+    
+    # Generate embedding
+    try:
+        from app.ai_engine import vectorize_text
+        text = " ".join(skills)
+        embedding = vectorize_text(text)
+        supabase.table("users").update({"skills_embedding": embedding}).eq("id", user["id"]).execute()
+        print(f"✅ Generated embedding for student {user['id']} with skills: {skills}")
+    except Exception as e:
+        print(f"⚠️ Embedding generation failed: {e}")
+    
+    return {"message": "Skills updated", "skills": skills, "embedding_generated": True}
+
+
+# ============================================================
+# FORGOT PASSWORD
+# ============================================================
 @router.post("/forgot-password")
 async def forgot_password(email: str):
     try:
@@ -213,70 +277,82 @@ async def forgot_password(email: str):
     except Exception:
         return {"message": "If an account exists, a password reset link has been sent."}
 
-# ---------- Change password ----------
+
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
 @router.post("/change-password")
 async def change_password(
     old_password: str, 
     new_password: str, 
-    user=Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    """Change user password"""
     try:
-        # Verify old password
-        supabase.auth.sign_in_with_password({
-            "email": user["email"],
-            "password": old_password
-        })
-    except Exception:
-        raise HTTPException(status_code=401, detail="Old password is incorrect")
-    
-    if len(new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    
-    try:
-        supabase.auth.admin.update_user_by_id(user["id"], {"password": new_password})
-        return {"message": "Password changed successfully"}
+        # First, get the user from the token
+        token = credentials.credentials
+        auth_user = supabase.auth.get_user(token)
+        
+        if not auth_user or not auth_user.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get the full user profile from your users table
+        user_result = supabase.table("users").select("*").eq("id", auth_user.user.id).execute()
+        
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
+        # Verify old password by attempting to sign in
+        try:
+            supabase.auth.sign_in_with_password({
+                "email": user["email"],
+                "password": old_password
+            })
+        except Exception:
+            raise HTTPException(status_code=401, detail="Old password is incorrect")
+        
+        # Validate new password
+        if len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        
+        # Update password using admin API
+        try:
+            supabase.auth.admin.update_user_by_id(user["id"], {"password": new_password})
+            return {"message": "Password changed successfully"}
+        except Exception as e:
+            print(f"Admin update failed: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to change password: {str(e)}")
+            
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Unexpected error: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to change password: {str(e)}")
 
-# ---------- Admin dependency ----------
+# ============================================================
+# ADMIN DEPENDENCY
+# ============================================================
 async def require_admin(user=Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
     return user
 
+
+# ============================================================
+# NOTIFICATION PREFERENCES
+# ============================================================
 @router.put("/preferences")
 async def update_preferences(preferences: dict, user=Depends(get_current_user)):
-    """Update user notification preferences"""
     supabase.table("users").update({"preferences": preferences}).eq("id", user["id"]).execute()
     return {"message": "Preferences updated"}
 
+
+# ============================================================
+# PRIVACY SETTINGS
+# ============================================================
 @router.put("/privacy")
 async def update_privacy(privacy: dict, user=Depends(get_current_user)):
-    """Update user privacy settings"""
     supabase.table("users").update({"privacy_settings": privacy}).eq("id", user["id"]).execute()
     return {"message": "Privacy settings updated"}
-
-@router.put("/profile-with-embedding")
-async def update_profile_with_embedding(updates: dict, user=Depends(get_current_user)):
-    """Update profile and regenerate AI embedding"""
-    allowed_fields = ["full_name", "phone", "location", "bio", "github", "linkedin", "portfolio", "department", "year", "skills"]
-    filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
-    
-    if not filtered:
-        raise HTTPException(400, "No valid fields to update")
-    
-    supabase.table("users").update(filtered).eq("id", user["id"]).execute()
-    
-    # Regenerate embedding if skills were updated
-    if "skills" in filtered and user.get("role") == "student":
-        try:
-            from app.ai_engine import vectorize_text
-            skills = filtered["skills"]
-            text = " ".join(skills)
-            embedding = vectorize_text(text)
-            supabase.table("users").update({"skills_embedding": embedding}).eq("id", user["id"]).execute()
-        except Exception as e:
-            print(f"Embedding update failed: {e}")
-    
-    updated_user = supabase.table("users").select("*").eq("id", user["id"]).single().execute()
-    return updated_user.data if updated_user.data else {"message": "Profile updated"}

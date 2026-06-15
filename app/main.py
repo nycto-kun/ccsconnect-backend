@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi import Request
 import os
 from dotenv import load_dotenv
 
@@ -12,33 +14,31 @@ from app.routes import upload
 
 app = FastAPI(title="CCSConnect API", version="1.0.0")
 
-# CORS Configuration - MUST be first and correct
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8000",
-    "https://ccsconnect-frontend.vercel.app",
-    "https://*.vercel.app",
-    "https://ccsconnect.nport.link",
-    "https://*.nport.link",
-]
-
+# CORS Configuration - FIXED
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "https://ccsconnect-frontend.vercel.app",
+        "https://ccsconnect.nport.link",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
-    max_age=86400,
 )
 
-# OPTIONS handler for all routes (CORS preflight)
+# OPTIONS handler for preflight requests
 @app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return {"message": "OK"}
-
-# NO REDIRECT MIDDLEWARE - DO NOT ADD ANY
+async def preflight_handler(request: Request, rest_of_path: str):
+    response = JSONResponse(content={"message": "OK"})
+    response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "")
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
